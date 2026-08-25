@@ -13,7 +13,7 @@ Pure Dart Chinese text segmentation — a complete port of [Python jieba](https:
 - **1.9 MB 压缩词典** — Delta 编码 + Gzip，约 19ms 加载
 - **零拷贝 FlatTrie** — 排序子节点 + 二分查找，无 Map 分配
 - **HMM 未登录词识别** — 与 Python jieba HMM 模型一致
-- **同步 / 异步初始化** — 支持 `initializeSync()` 和 `load()`
+- **Flutter AssetBundle 初始化** — 内置词典通过 `rootBundle` 加载
 - **纯 Dart 实现** — 无 FFI，跨平台运行
 
 ## 快速开始 / Getting started
@@ -21,9 +21,9 @@ Pure Dart Chinese text segmentation — a complete port of [Python jieba](https:
 ```dart
 import 'package:dart_jieba/dart_jieba.dart';
 
-void main() {
+Future<void> main() async {
   final jieba = JiebaSegmenter();
-  jieba.initializeSync();
+  await jieba.initialize();
 
   print(jieba.cut('我来到北京清华大学'));
   // [我, 来到, 北京, 清华大学]
@@ -58,15 +58,31 @@ dart_jieba 支持两种词典格式：
 | 二进制压缩 / Binary compressed | `.dgz` | **~19 ms** | Delta 编码 + Gzip，生产环境推荐 |
 | 文本 / Text | `.txt` | ~110 ms | 运行时构建 FlatTrie，适合开发调试 |
 
-`initializeSync()` 自动检测词典格式——如果指定路径为 `dict.txt`，会先查找同目录下的 `dict.dgz`，找到则优先加载二进制格式：
+`initialize()` 直接通过 Flutter 的 `rootBundle` 读取词典；不再通过 `File` 访问运行时路径。指定 `.txt` 资源时，加载器会优先尝试同名 `.dgz` 资源：
 
 ```dart
 // 自动优先加载 assets/dict.dgz（如果存在），否则加载 assets/dict.txt
-jieba.initializeSync(dictPath: 'assets/dict.txt');
+await jieba.initialize(dictPath: 'assets/dict.txt');
 
 // 也可以直接指定 .dgz
-jieba.initializeSync(dictPath: 'assets/dict.dgz');
+await jieba.initialize(dictPath: 'assets/dict.dgz');
 ```
+
+### Flutter 中使用内置词典 / Using the built-in dictionary in Flutter
+
+Flutter packages its assets into an `AssetBundle`; they cannot be loaded with
+`File('packages/...')`. The package declares the dictionary asset automatically,
+including when it is installed from Git. Calling `initialize()` loads it through
+`rootBundle` directly:
+
+```dart
+import 'package:dart_jieba/dart_jieba.dart';
+final jieba = JiebaSegmenter();
+await jieba.initialize();
+```
+
+The package name in the asset key is `dart_jieba` (underscore), not the Git
+repository name `dart-jieba`.
 
 ### 生成 .dgz 文件 / Generating .dgz from .txt
 
@@ -92,10 +108,10 @@ Freq and tag are optional, but freq affects segmentation results. Custom diction
 
 ```dart
 // 使用自定义文本词典（运行时构建 FlatTrie，加载较慢）
-jieba.initializeSync(dictPath: '/path/to/custom_dict.txt');
+await jieba.initialize(dictPath: 'assets/custom_dict.txt');
 
 // 推荐先用 build_dict_bin.dart 生成 .dgz，然后加载二进制格式
-jieba.initializeSync(dictPath: '/path/to/custom_dict.dgz');
+await jieba.initialize(dictPath: 'assets/custom_dict.dgz');
 ```
 
 ## 性能对比 / Performance

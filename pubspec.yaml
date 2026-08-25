@@ -7,6 +7,17 @@ license: MIT
 environment:
   sdk: ^3.5.0
 
+dependencies:
+  flutter:
+    sdk: flutter
+
 dev_dependencies:
   lints: ^6.0.0
-  test: ^1.25.6
+  flutter_test:
+    sdk: flutter
+
+# Make the built-in dictionary available to Flutter applications that depend on
+# this package (including dependencies resolved from a Git repository).
+flutter:
+  assets:
+    - assets/dict.dgz

@@ -1,5 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'flat_trie.dart';
 import 'dag.dart';
@@ -12,6 +14,7 @@ final _reSkipDefault = RegExp(r'\r\n|\s');
 final _reEng = RegExp(r'[a-zA-Z0-9]');
 final _reHanFinalseg = RegExp(r'[\u4E00-\u9FD5]+');
 final _reSkipFinalseg = RegExp(r'([a-zA-Z0-9]+(?:\.\d+)?%?)');
+const _defaultDictAsset = 'packages/dart_jieba/assets/dict.dgz';
 
 /// Chinese text segmenter using the jieba algorithm.
 ///
@@ -20,13 +23,13 @@ final _reSkipFinalseg = RegExp(r'([a-zA-Z0-9]+(?:\.\d+)?%?)');
 /// - **Full**: all possible word combinations
 /// - **Search engine**: further splits long words for search indexing
 ///
-/// Dictionary can be loaded from a compressed binary file (`.dgz`, ~19ms)
-/// or a plain text file (`.txt`, ~110ms). When a `.txt` path is specified,
-/// the loader first checks for a corresponding `.dgz` file.
+/// Dictionary assets are loaded through Flutter's `rootBundle`. A compressed
+/// binary `.dgz` dictionary loads in about 19ms; a `.txt` asset can also be
+/// used and is converted at runtime.
 ///
 /// ```dart
 /// final jieba = JiebaSegmenter();
-/// jieba.initializeSync();
+/// await jieba.initialize();
 /// print(jieba.cut('我来到北京清华大学'));
 /// // [我, 来到, 北京, 清华大学]
 /// ```
@@ -38,13 +41,13 @@ class JiebaSegmenter {
 
   static JiebaSegmenter? _instance;
 
-  /// Creates a new [JiebaSegmenter]. Call [initializeSync] or [load] before use.
+  /// Creates a new [JiebaSegmenter]. Call [initialize] or [load] before use.
   JiebaSegmenter();
 
   /// Loads and initializes the singleton segmenter asynchronously.
   ///
   /// Returns the cached instance if already loaded.
-  /// [dictPath] is optional; auto-detects `assets/dict.dgz` or `assets/dict.txt`.
+  /// [dictPath] is an AssetBundle key. Defaults to this package's dictionary.
   static Future<JiebaSegmenter> load({String? dictPath}) async {
     if (_instance != null) return _instance!;
     final s = JiebaSegmenter();
@@ -61,50 +64,58 @@ class JiebaSegmenter {
     return _instance!;
   }
 
-  /// Initializes the segmenter asynchronously. Delegates to [initializeSync].
-  Future<void> initialize({String? dictPath}) async {
-    initializeSync(dictPath: dictPath);
-  }
-
-  /// Initializes the segmenter synchronously.
+  /// Initializes the segmenter from a Flutter asset.
   ///
-  /// If [dictPath] is null, auto-detects `assets/dict.dgz` or `assets/dict.txt`.
-  /// When [dictPath] ends in `.txt`, checks for a `.dgz` file first.
-  void initializeSync({String? dictPath}) {
-    if (_initialized && _dictPath == dictPath) return;
-    _dictPath = dictPath ?? _findDefaultDict();
+  /// [dictPath] is an AssetBundle key. When omitted, the built-in package
+  /// asset `packages/dart_jieba/assets/dict.dgz` is loaded.
+  Future<void> initialize({String? dictPath}) async {
+    final assetPath = dictPath ?? _defaultDictAsset;
+    if (_initialized && _dictPath == assetPath) return;
 
-    final binPath = _dictPath!.replaceAll(RegExp(r'\.txt$'), '.dgz');
-    final binFile = File(binPath);
-    if (binFile.existsSync()) {
-      _trie = FlatTrie.load(binPath);
-    } else {
-      _trie = _loadTextDict(_dictPath!);
+    final binAssetPath = assetPath.replaceAll(RegExp(r'\.txt$'), '.dgz');
+    try {
+      final data = await rootBundle.load(binAssetPath);
+      _trie = FlatTrie.fromBytes(_bytesFrom(data));
+    } catch (_) {
+      if (!assetPath.endsWith('.txt')) rethrow;
+      final data = await rootBundle.load(assetPath);
+      _trie = _loadTextDict(_bytesFrom(data));
     }
+    _dictPath = assetPath;
     _initialized = true;
     _instance ??= this;
   }
 
-  static String _findDefaultDict() {
-    final candidates = [
-      'assets/dict.dgz',
-      'assets/dict.txt',
-      'packages/dart-jieba/assets/dict.dgz',
-      'packages/dart-jieba/assets/dict.txt',
-    ];
-    for (final c in candidates) {
-      if (File(c).existsSync()) return c;
-    }
-    throw StateError('No dict.dgz or dict.txt found');
+  /// Synchronous asset loading is not supported by Flutter's AssetBundle.
+  ///
+  /// Use `await initialize(dictPath: ...)` instead.
+  @Deprecated('Use await initialize(dictPath: ...) instead.')
+  void initializeSync({String? dictPath}) {
+    throw UnsupportedError(
+      'Synchronous asset loading is unavailable. Use await initialize().',
+    );
   }
 
-  FlatTrie _loadTextDict(String path) {
-    final file = File(path);
-    if (!file.existsSync()) {
-      throw StateError('Dictionary file not found: $path');
-    }
+  /// Initializes the segmenter from dictionary [bytes].
+  ///
+  /// This is useful when an application provides its own asset loading layer.
+  void initializeFromBytes(Uint8List bytes) {
+    if (_initialized && _dictPath == '<memory>') return;
+    _trie = FlatTrie.fromBytes(bytes);
+    _dictPath = '<memory>';
+    _initialized = true;
+    _instance ??= this;
+  }
+
+  /// Returns the exact byte range occupied by an AssetBundle [data] object.
+  Uint8List _bytesFrom(ByteData data) {
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  /// Builds a trie from UTF-8 text dictionary [bytes].
+  FlatTrie _loadTextDict(Uint8List bytes) {
     final trie = Trie();
-    final text = utf8.decoder.convert(file.readAsBytesSync());
+    final text = utf8.decoder.convert(bytes);
     int total = 0;
     int lineStart = 0;
     final n = text.length;

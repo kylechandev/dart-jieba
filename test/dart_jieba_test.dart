@@ -1,26 +1,13 @@
-import 'dart:io';
-
 import 'package:dart_jieba/dart_jieba.dart';
-import 'package:test/test.dart';
-
-String _dictPath() {
-  final dir = Directory.current.path;
-  for (final candidate in [
-    '$dir/assets/dict.dgz',
-    '$dir/assets/dict.txt',
-    '$dir/dart-jieba/assets/dict.dgz',
-    '$dir/dart-jieba/assets/dict.txt',
-  ]) {
-    if (File(candidate).existsSync()) return candidate;
-  }
-  throw StateError('No dict found in $dir');
-}
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   late JiebaSegmenter jieba;
 
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(() async {
-    jieba = await JiebaSegmenter.load(dictPath: _dictPath());
+    jieba = await JiebaSegmenter.load();
   });
 
   group('cut (default mode, HMM=true)', () {
@@ -78,6 +65,12 @@ void main() {
     test('whitespace', () {
       expect(jieba.cut('  '), [' ', ' ']);
     });
+  });
+
+  test('initializes from bundled dictionary asset', () async {
+    final fromBytes = JiebaSegmenter();
+    await fromBytes.initialize();
+    expect(fromBytes.cut('我来到北京清华大学'), ['我', '来到', '北京', '清华大学']);
   });
 
   group('cut (no HMM)', () {
