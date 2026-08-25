@@ -89,8 +89,8 @@ class JiebaSegmenter {
     final candidates = [
       'assets/dict.dgz',
       'assets/dict.txt',
-      'dart-jieba/assets/dict.dgz',
-      'dart-jieba/assets/dict.txt',
+      'packages/dart-jieba/assets/dict.dgz',
+      'packages/dart-jieba/assets/dict.txt',
     ];
     for (final c in candidates) {
       if (File(c).existsSync()) return c;
